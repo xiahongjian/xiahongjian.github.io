@@ -1,0 +1,518 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=2">
+<meta name="theme-color" content="#222">
+<meta name="generator" content="Hexo 7.3.0">
+  <link rel="apple-touch-icon" sizes="180x180" href="/images/apple-touch-icon-next.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/images/favicon-32x32-next.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/images/favicon-16x16-next.png">
+  <link rel="mask-icon" href="/images/logo.svg" color="#222">
+
+<link rel="stylesheet" href="/css/main.css">
+
+
+<link rel="stylesheet" href="/lib/font-awesome/css/all.min.css">
+
+<script id="hexo-configurations">
+    var NexT = window.NexT || {};
+    var CONFIG = {"hostname":"me.holdon.fun","root":"/","scheme":"Muse","version":"7.8.0","exturl":false,"sidebar":{"position":"left","display":"post","padding":18,"offset":12,"onmobile":false},"copycode":{"enable":true,"show_result":true,"style":null},"back2top":{"enable":true,"sidebar":false,"scrollpercent":false},"bookmark":{"enable":false,"color":"#222","save":"auto"},"fancybox":false,"mediumzoom":false,"lazyload":false,"pangu":false,"comments":{"style":"tabs","active":null,"storage":true,"lazyload":false,"nav":null},"algolia":{"hits":{"per_page":10},"labels":{"input_placeholder":"Search for Posts","hits_empty":"We didn't find any results for the search: ${query}","hits_stats":"${hits} results found in ${time} ms"}},"localsearch":{"enable":true,"trigger":"auto","top_n_per_article":1,"unescape":false,"preload":false},"motion":{"enable":true,"async":false,"transition":{"post_block":"fadeIn","post_header":"slideDownIn","post_body":"slideDownIn","coll_header":"slideLeftIn","sidebar":"slideUpIn"}},"path":"search.json"};
+  </script>
+
+  <meta name="description" content="概述由于新版本的Chrome对于非HTTPS网站都会提示不安全，十分影响使用体验，所以打算把博客站点升级到HTTPS。 运行环境此博客系统的运行环境是阿里云Ubuntu14.04(不记得当初买ECS的时候为什么会选这个版本，可能是忘记选了吧😂)，Nginx, Spring Boot。">
+<meta property="og:type" content="article">
+<meta property="og:title" content="Let&#39;s Encrypt HTTPS证书申请、安装及自动续期">
+<meta property="og:url" content="https://me.holdon.fun/2019/03/28/Let-s-Encrypt-HTTPS%E8%AF%81%E4%B9%A6%E7%94%B3%E8%AF%B7%E3%80%81%E5%AE%89%E8%A3%85%E5%8F%8A%E8%87%AA%E5%8A%A8%E7%BB%AD%E6%9C%9F/index.html">
+<meta property="og:site_name" content="码上游记">
+<meta property="og:description" content="概述由于新版本的Chrome对于非HTTPS网站都会提示不安全，十分影响使用体验，所以打算把博客站点升级到HTTPS。 运行环境此博客系统的运行环境是阿里云Ubuntu14.04(不记得当初买ECS的时候为什么会选这个版本，可能是忘记选了吧😂)，Nginx, Spring Boot。">
+<meta property="og:locale" content="zh_CN">
+<meta property="article:published_time" content="2019-03-28T19:17:05.000Z">
+<meta property="article:modified_time" content="2025-04-09T13:06:36.003Z">
+<meta property="article:author" content="hongjian.xia">
+<meta property="article:tag" content="HTTPS">
+<meta property="article:tag" content="Nginx">
+<meta property="article:tag" content="Certbot-auto">
+<meta name="twitter:card" content="summary">
+
+<link rel="canonical" href="https://me.holdon.fun/2019/03/28/Let-s-Encrypt-HTTPS%E8%AF%81%E4%B9%A6%E7%94%B3%E8%AF%B7%E3%80%81%E5%AE%89%E8%A3%85%E5%8F%8A%E8%87%AA%E5%8A%A8%E7%BB%AD%E6%9C%9F/">
+
+
+<script id="page-configurations">
+  // https://hexo.io/docs/variables.html
+  CONFIG.page = {
+    sidebar: "",
+    isHome : false,
+    isPost : true,
+    lang   : 'zh-CN'
+  };
+</script>
+
+  <title>Let's Encrypt HTTPS证书申请、安装及自动续期 | 码上游记</title>
+  
+
+
+
+
+
+
+  <noscript>
+  <style>
+  .use-motion .brand,
+  .use-motion .menu-item,
+  .sidebar-inner,
+  .use-motion .post-block,
+  .use-motion .pagination,
+  .use-motion .comments,
+  .use-motion .post-header,
+  .use-motion .post-body,
+  .use-motion .collection-header { opacity: initial; }
+
+  .use-motion .site-title,
+  .use-motion .site-subtitle {
+    opacity: initial;
+    top: initial;
+  }
+
+  .use-motion .logo-line-before i { left: initial; }
+  .use-motion .logo-line-after i { right: initial; }
+  </style>
+</noscript>
+
+</head>
+
+<body itemscope itemtype="http://schema.org/WebPage">
+  <div class="container use-motion">
+    <div class="headband"></div>
+
+    <header class="header" itemscope itemtype="http://schema.org/WPHeader">
+      <div class="header-inner"><div class="site-brand-container">
+  <div class="site-nav-toggle">
+    <div class="toggle" aria-label="切换导航栏">
+      <span class="toggle-line toggle-line-first"></span>
+      <span class="toggle-line toggle-line-middle"></span>
+      <span class="toggle-line toggle-line-last"></span>
+    </div>
+  </div>
+
+  <div class="site-meta">
+
+    <a href="/" class="brand" rel="start">
+      <span class="logo-line-before"><i></i></span>
+      <h1 class="site-title">码上游记</h1>
+      <span class="logo-line-after"><i></i></span>
+    </a>
+      <p class="site-subtitle" itemprop="description">hongjian.xia的个人博客</p>
+  </div>
+
+  <div class="site-nav-right">
+    <div class="toggle popup-trigger">
+        <i class="fa fa-search fa-fw fa-lg"></i>
+    </div>
+  </div>
+</div>
+
+
+
+
+<nav class="site-nav">
+  <ul id="menu" class="main-menu menu">
+        <li class="menu-item menu-item-home">
+
+    <a href="/" rel="section"><i class="fa fa-home fa-fw"></i>首页</a>
+
+  </li>
+        <li class="menu-item menu-item-tags">
+
+    <a href="/tags/" rel="section"><i class="fa fa-tags fa-fw"></i>标签</a>
+
+  </li>
+        <li class="menu-item menu-item-categories">
+
+    <a href="/categories/" rel="section"><i class="fa fa-th fa-fw"></i>分类</a>
+
+  </li>
+        <li class="menu-item menu-item-archives">
+
+    <a href="/archives/" rel="section"><i class="fa fa-archive fa-fw"></i>归档</a>
+
+  </li>
+      <li class="menu-item menu-item-search">
+        <a role="button" class="popup-trigger"><i class="fa fa-search fa-fw"></i>搜索
+        </a>
+      </li>
+  </ul>
+</nav>
+
+
+
+  <div class="search-pop-overlay">
+    <div class="popup search-popup">
+        <div class="search-header">
+  <span class="search-icon">
+    <i class="fa fa-search"></i>
+  </span>
+  <div class="search-input-container">
+    <input autocomplete="off" autocapitalize="off"
+           placeholder="搜索..." spellcheck="false"
+           type="search" class="search-input">
+  </div>
+  <span class="popup-btn-close">
+    <i class="fa fa-times-circle"></i>
+  </span>
+</div>
+<div id="search-result">
+  <div id="no-result">
+    <i class="fa fa-spinner fa-pulse fa-5x fa-fw"></i>
+  </div>
+</div>
+
+    </div>
+  </div>
+
+</div>
+    </header>
+
+    
+  <div class="back-to-top">
+    <i class="fa fa-arrow-up"></i>
+    <span>0%</span>
+  </div>
+
+
+    <main class="main">
+      <div class="main-inner">
+        <div class="content-wrap">
+          
+
+          <div class="content post posts-expand">
+            
+
+    
+  
+  
+  <article itemscope itemtype="http://schema.org/Article" class="post-block" lang="zh-CN">
+    <link itemprop="mainEntityOfPage" href="https://me.holdon.fun/2019/03/28/Let-s-Encrypt-HTTPS%E8%AF%81%E4%B9%A6%E7%94%B3%E8%AF%B7%E3%80%81%E5%AE%89%E8%A3%85%E5%8F%8A%E8%87%AA%E5%8A%A8%E7%BB%AD%E6%9C%9F/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="image" content="/images/avatar.jpg">
+      <meta itemprop="name" content="hongjian.xia">
+      <meta itemprop="description" content="">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="码上游记">
+    </span>
+      <header class="post-header">
+        <h1 class="post-title" itemprop="name headline">
+          Let's Encrypt HTTPS证书申请、安装及自动续期
+        </h1>
+
+        <div class="post-meta">
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-calendar"></i>
+              </span>
+              <span class="post-meta-item-text">发表于</span>
+
+              <time title="创建时间：2019-03-28 19:17:05" itemprop="dateCreated datePublished" datetime="2019-03-28T19:17:05+00:00">2019-03-28</time>
+            </span>
+              <span class="post-meta-item">
+                <span class="post-meta-item-icon">
+                  <i class="far fa-calendar-check"></i>
+                </span>
+                <span class="post-meta-item-text">更新于</span>
+                <time title="修改时间：2025-04-09 13:06:36" itemprop="dateModified" datetime="2025-04-09T13:06:36+00:00">2025-04-09</time>
+              </span>
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-folder"></i>
+              </span>
+              <span class="post-meta-item-text">分类于</span>
+                <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+                  <a href="/categories/HTTPS/" itemprop="url" rel="index"><span itemprop="name">HTTPS</span></a>
+                </span>
+            </span>
+
+          <br>
+            <span class="post-meta-item" title="本文字数">
+              <span class="post-meta-item-icon">
+                <i class="far fa-file-word"></i>
+              </span>
+                <span class="post-meta-item-text">本文字数：</span>
+              <span>2.7k</span>
+            </span>
+            <span class="post-meta-item" title="阅读时长">
+              <span class="post-meta-item-icon">
+                <i class="far fa-clock"></i>
+              </span>
+                <span class="post-meta-item-text">阅读时长 &asymp;</span>
+              <span>2 分钟</span>
+            </span>
+
+        </div>
+      </header>
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody">
+
+      
+        <h2 id="概述"><a href="#概述" class="headerlink" title="概述"></a>概述</h2><p>由于新版本的Chrome对于非HTTPS网站都会提示不安全，十分影响使用体验，所以打算把博客站点升级到HTTPS。</p>
+<h2 id="运行环境"><a href="#运行环境" class="headerlink" title="运行环境"></a>运行环境</h2><p>此博客系统的运行环境是阿里云Ubuntu14.04(不记得当初买ECS的时候为什么会选这个版本，可能是忘记选了吧😂)，Nginx, Spring Boot。</p>
+<span id="more"></span>
+<h2 id="Nginx-https模块支持"><a href="#Nginx-https模块支持" class="headerlink" title="Nginx https模块支持"></a>Nginx https模块支持</h2><p>当初安装Nginx时没有配置支持https，所以需要重新编译一个支持httpps的Nginx。</p>
+<p>首先确定自己的Nginx的版本及编译参数（如果支持https即可跳过接下来的步骤）。执行<code>nginx -V</code>，确定Nginx版本。</p>
+<p>下载对应版本的<a target="_blank" rel="noopener" href="http://nginx.org/en/download.html">Nginx源码</a>,解压后进入目录, 执行以下命令</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">./configure --prefix=/usr/local/nginx --with-http_ssl_module --with-file-aio --with-http_realip_module</span><br><span class="line">make</span><br></pre></td></tr></table></figure>
+<p><strong><em>注意</em></strong> <code>--prefix</code>需要输入自己的Nginx安装目录，否则运行Nginx时会出现无法打开log文件、配置文件等问题。<br>编译完毕后<code>objs</code>目录下就有个<code>nginx</code>文件，此文件就是我们需要的。</p>
+<p>备份原来的Nginx程序。</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line"><span class="built_in">cp</span> /usr/local/nginx/sbin/nginx /usr/local/nginx/sbin/nginx.bak</span><br></pre></td></tr></table></figure>
+<p><code>kill</code> Nginx进程，然后复制新编译的Nginx。</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line"><span class="built_in">cp</span> ./objs/nginx /usr/local/nginx/sbin/nginx</span><br></pre></td></tr></table></figure>
+<p>启动Nginx，完工。</p>
+<h2 id="安装Certbot-auto及证书生成"><a href="#安装Certbot-auto及证书生成" class="headerlink" title="安装Certbot-auto及证书生成"></a>安装Certbot-auto及证书生成</h2><p>下载<a target="_blank" rel="noopener" href="https://dl.eff.org/certbot-auto">Certbot-auto</a>, <code>chmod +x certbot-auto</code>添加运行执行权限。</p>
+<p>这里我需要申请的是通配符证书，所以申请过程中需要为DNS增加一条TXT记录，为了方便以后自动续期(<code>renew</code>)，需要用到另外一个项目<a target="_blank" rel="noopener" href="https://github.com/ywdblog/certbot-letencrypt-wildcardcertificates-alydns-au">certbot-letencrypt-wildcardcertificates-alydns-au</a>，这个项目功能自动调用API为DNS添加TXT记录。</p>
+<p>下载<code>certbot-letencrypt-wildcardcertificates-alydns-au</code>后需要在脚本中配置上自己的API Key。执行下面的命令测试(具体脚本的参数，参考项目的README)</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">./certbot-auto certonly  -d *.example.com --manual --preferred-challenges dns --dry-run  --manual-auth-hook <span class="string">&quot;/脚本目录/au.sh php aly add&quot;</span> --manual-cleanup-hook <span class="string">&quot;/脚本目录/au.sh php aly clean&quot;</span> </span><br></pre></td></tr></table></figure>
+<p>没有问题后执行以下命令，正式生成证书</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">./certbot-auto certonly  -d *.example.com --manual --preferred-challenges dns --dry-run  --manual-auth-hook <span class="string">&quot;/脚本目录/au.sh php aly add&quot;</span> --manual-cleanup-hook <span class="string">&quot;/脚本目录/au.sh php aly clean&quot;</span> </span><br></pre></td></tr></table></figure>
+<p>查看生成的证书</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">./certbot-auto certificates</span><br></pre></td></tr></table></figure>
+<p>证书续期</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">./certbot-auto renew  --manual --preferred-challenges dns --manual-auth-hook <span class="string">&quot;/脚本目录/au.sh php aly add&quot;</span> --manual-cleanup-hook <span class="string">&quot;/脚本目录/au.sh php aly clean&quot;</span>  </span><br></pre></td></tr></table></figure>
+<p>加入<code>crontab</code><br>编辑文件 /etc/crontab :</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">#证书有效期&lt;30天才会renew，所以crontab可以配置为1天或1周，成功续期后Nginx reload</span></span><br><span class="line">1 1 */1 * * root certbot-auto renew --manual --preferred-challenges dns --deploy-hook  <span class="string">&quot;nginx -s reload&quot;</span>--manual-auth-hook <span class="string">&quot;/脚本目录/au.sh php aly add&quot;</span> --manual-cleanup-hook <span class="string">&quot;/脚本目录/au.sh php aly clean&quot;</span> </span><br></pre></td></tr></table></figure>
+<h2 id="配置Nginx"><a href="#配置Nginx" class="headerlink" title="配置Nginx"></a>配置Nginx</h2><p>编辑配置文件<code>/usr/local/nginx/conf/nginx.conf</code></p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br></pre></td><td class="code"><pre><span class="line">## 将http请求转发到https</span><br><span class="line">server &#123;</span><br><span class="line">     listen      80;</span><br><span class="line">     server_name     www.example.com example.com test.example.com;</span><br><span class="line">     rewrite ^(.*)$  https://$host$1 permanent;</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line">server &#123;</span><br><span class="line">    server_name  www.example.com example.com test.example.com;</span><br><span class="line">    listen 443;</span><br><span class="line">    ssl on;</span><br><span class="line">    ssl_certificate /etc/letsencrypt/live/example.comfullchain.pem;</span><br><span class="line">    ssl_certificate_key /etc/letsencrypt/live/example.com/privkey.pem;</span><br><span class="line">    ssl_trusted_certificate  /etc/letsencrypt/live/example.com/chain.pem;</span><br><span class="line"> </span><br><span class="line">    location / &#123;</span><br><span class="line">        proxy_pass http://127.0.0.1:8080;</span><br><span class="line">       </span><br><span class="line">        ## 做反向代理需要设置请求header，防止丢失访问者的原IP</span><br><span class="line">        proxy_set_header Host $host;</span><br><span class="line">        proxy_set_header X-Real-IP $remote_addr;</span><br><span class="line">        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;</span><br><span class="line"></span><br><span class="line">        ## websocket配置</span><br><span class="line">        proxy_http_version 1.1;</span><br><span class="line">        proxy_set_header Upgrade $http_upgrade;               </span><br><span class="line">        proxy_set_header Connection &quot;upgrade&quot;;</span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>reload</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">nginx -s reload</span><br></pre></td></tr></table></figure>
+<p>🎉大功告成</p>
+
+    </div>
+
+    
+    
+    
+
+      <footer class="post-footer">
+          <div class="post-tags">
+              <a href="/tags/HTTPS/" rel="tag"># HTTPS</a>
+              <a href="/tags/Nginx/" rel="tag"># Nginx</a>
+              <a href="/tags/Certbot-auto/" rel="tag"># Certbot-auto</a>
+          </div>
+
+        
+
+
+        
+    <div class="post-nav">
+      <div class="post-nav-item">
+    <a href="/2019/03/23/first/" rel="prev" title="第一篇博文--记录搭建过程遇到的问题">
+      <i class="fa fa-chevron-left"></i> 第一篇博文--记录搭建过程遇到的问题
+    </a></div>
+      <div class="post-nav-item">
+    <a href="/2019/05/13/%E4%B8%80%E4%B8%AAPerl%E6%A8%A1%E5%9D%97%E7%9A%84%E7%BC%96%E5%86%99%E6%96%B9%E6%B3%95/" rel="next" title="一个Perl模块的编写方法">
+      一个Perl模块的编写方法 <i class="fa fa-chevron-right"></i>
+    </a></div>
+    </div>
+      </footer>
+    
+  </article>
+  
+  
+  
+
+
+
+          </div>
+          
+
+<script>
+  window.addEventListener('tabs:register', () => {
+    let { activeClass } = CONFIG.comments;
+    if (CONFIG.comments.storage) {
+      activeClass = localStorage.getItem('comments_active') || activeClass;
+    }
+    if (activeClass) {
+      let activeTab = document.querySelector(`a[href="#comment-${activeClass}"]`);
+      if (activeTab) {
+        activeTab.click();
+      }
+    }
+  });
+  if (CONFIG.comments.storage) {
+    window.addEventListener('tabs:click', event => {
+      if (!event.target.matches('.tabs-comment .tab-content .tab-pane')) return;
+      let commentClass = event.target.classList[1];
+      localStorage.setItem('comments_active', commentClass);
+    });
+  }
+</script>
+
+        </div>
+          
+  
+  <div class="toggle sidebar-toggle">
+    <span class="toggle-line toggle-line-first"></span>
+    <span class="toggle-line toggle-line-middle"></span>
+    <span class="toggle-line toggle-line-last"></span>
+  </div>
+
+  <aside class="sidebar">
+    <div class="sidebar-inner">
+
+      <ul class="sidebar-nav motion-element">
+        <li class="sidebar-nav-toc">
+          文章目录
+        </li>
+        <li class="sidebar-nav-overview">
+          站点概览
+        </li>
+      </ul>
+
+      <!--noindex-->
+      <div class="post-toc-wrap sidebar-panel">
+          <div class="post-toc motion-element"><ol class="nav"><li class="nav-item nav-level-2"><a class="nav-link" href="#%E6%A6%82%E8%BF%B0"><span class="nav-number">1.</span> <span class="nav-text">概述</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E8%BF%90%E8%A1%8C%E7%8E%AF%E5%A2%83"><span class="nav-number">2.</span> <span class="nav-text">运行环境</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#Nginx-https%E6%A8%A1%E5%9D%97%E6%94%AF%E6%8C%81"><span class="nav-number">3.</span> <span class="nav-text">Nginx https模块支持</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%AE%89%E8%A3%85Certbot-auto%E5%8F%8A%E8%AF%81%E4%B9%A6%E7%94%9F%E6%88%90"><span class="nav-number">4.</span> <span class="nav-text">安装Certbot-auto及证书生成</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E9%85%8D%E7%BD%AENginx"><span class="nav-number">5.</span> <span class="nav-text">配置Nginx</span></a></li></ol></div>
+      </div>
+      <!--/noindex-->
+
+      <div class="site-overview-wrap sidebar-panel">
+        <div class="site-author motion-element" itemprop="author" itemscope itemtype="http://schema.org/Person">
+    <img class="site-author-image" itemprop="image" alt="hongjian.xia"
+      src="/images/avatar.jpg">
+  <p class="site-author-name" itemprop="name">hongjian.xia</p>
+  <div class="site-description" itemprop="description"></div>
+</div>
+<div class="site-state-wrap motion-element">
+  <nav class="site-state">
+      <div class="site-state-item site-state-posts">
+          <a href="/archives/">
+        
+          <span class="site-state-item-count">10</span>
+          <span class="site-state-item-name">日志</span>
+        </a>
+      </div>
+      <div class="site-state-item site-state-categories">
+            <a href="/categories/">
+          
+        <span class="site-state-item-count">6</span>
+        <span class="site-state-item-name">分类</span></a>
+      </div>
+      <div class="site-state-item site-state-tags">
+            <a href="/tags/">
+          
+        <span class="site-state-item-count">15</span>
+        <span class="site-state-item-name">标签</span></a>
+      </div>
+  </nav>
+</div>
+  <div class="links-of-author motion-element">
+      <span class="links-of-author-item">
+        <a href="https://github.com/xiahongjian" title="GitHub → https:&#x2F;&#x2F;github.com&#x2F;xiahongjian" rel="noopener" target="_blank"><i class="fab fa-github fa-fw"></i>GitHub</a>
+      </span>
+      <span class="links-of-author-item">
+        <a href="mailto:hongjian.xia@outlook.com" title="E-Mail → mailto:hongjian.xia@outlook.com" rel="noopener" target="_blank"><i class="fa fa-envelope fa-fw"></i>E-Mail</a>
+      </span>
+  </div>
+
+
+
+      </div>
+
+    </div>
+  </aside>
+  <div id="sidebar-dimmer"></div>
+
+
+      </div>
+    </main>
+
+    <footer class="footer">
+      <div class="footer-inner">
+        
+
+        
+
+<div class="copyright">
+  
+  &copy; 
+  <span itemprop="copyrightYear">2025</span>
+  <span class="with-love">
+    <i class="fa fa-heart"></i>
+  </span>
+  <span class="author" itemprop="copyrightHolder">hongjian.xia</span>
+    <span class="post-meta-divider">|</span>
+    <span class="post-meta-item-icon">
+      <i class="fa fa-chart-area"></i>
+    </span>
+    <span title="站点总字数">24k</span>
+    <span class="post-meta-divider">|</span>
+    <span class="post-meta-item-icon">
+      <i class="fa fa-coffee"></i>
+    </span>
+    <span title="站点阅读时长">22 分钟</span>
+</div>
+  <div class="powered-by">由 <a href="https://hexo.io/" class="theme-link" rel="noopener" target="_blank">Hexo</a> & <a href="https://muse.theme-next.org/" class="theme-link" rel="noopener" target="_blank">NexT.Muse</a> 强力驱动
+  </div>
+
+        
+
+
+
+
+
+
+
+
+      </div>
+    </footer>
+  </div>
+
+  
+  <script src="/lib/anime.min.js"></script>
+  <script src="/lib/velocity/velocity.min.js"></script>
+  <script src="/lib/velocity/velocity.ui.min.js"></script>
+
+<script src="/js/utils.js"></script>
+
+<script src="/js/motion.js"></script>
+
+
+<script src="/js/schemes/muse.js"></script>
+
+
+<script src="/js/next-boot.js"></script>
+
+
+
+
+  
+
+
+
+
+  
+<script src="/js/local-search.js"></script>
+
+
+
+
+
+
+
+
+
+
+
+
+
+  
+
+  
+
+  
+
+</body>
+</html>
